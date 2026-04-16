@@ -1,0 +1,11 @@
+# Imagen minima con psql para aplicar migraciones a Supabase
+FROM alpine:3.19
+
+RUN apk add --no-cache postgresql16-client bash
+
+WORKDIR /migrations
+
+COPY apply.sh /usr/local/bin/apply-migrations
+RUN chmod +x /usr/local/bin/apply-migrations
+
+ENTRYPOINT ["/usr/local/bin/apply-migrations"]

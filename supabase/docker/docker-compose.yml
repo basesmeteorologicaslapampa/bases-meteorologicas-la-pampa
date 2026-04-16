@@ -1,0 +1,10 @@
+services:
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile.migrate
+    volumes:
+      # Montar las migraciones del proyecto
+      - ../migrations:/migrations:ro
+    environment:
+      - DATABASE_URL=${DATABASE_URL:-}

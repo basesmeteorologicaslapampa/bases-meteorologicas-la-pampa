@@ -20,6 +20,9 @@
 .env.*
 !.env.example
 !.env.local.example
+# Supabase migrations env files
+supabase/.env.dev
+supabase/.env.prod
 
 # --- Vercel ---
 **/.vercel
