@@ -1,0 +1,10 @@
+# Imagen minima con Vercel CLI para hacer deploys sin instalar nada en el host
+FROM node:20-alpine
+
+RUN npm install -g vercel@latest
+
+WORKDIR /app
+
+# El codigo se monta como volumen (ver docker-compose.yml)
+ENTRYPOINT ["vercel"]
+CMD ["--help"]

@@ -1,0 +1,20 @@
+services:
+  vercel:
+    build:
+      context: .
+      dockerfile: Dockerfile.vercel
+    working_dir: /app
+    volumes:
+      # Montar el proyecto
+      - ..:/app
+      # Persistir login/config de Vercel entre runs
+      - vercel-config:/root/.local/share/com.vercel.cli
+      - vercel-cache:/root/.cache
+    environment:
+      # El token se lee del .env (ver abajo) o del ambiente del host
+      - VERCEL_TOKEN=${VERCEL_TOKEN:-}
+    # No se inicia solo - se corre con `docker compose run --rm vercel <comando>`
+
+volumes:
+  vercel-config:
+  vercel-cache:
