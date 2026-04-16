@@ -1,154 +1,106 @@
-# Deploy a Vercel (via Docker)
+# Deploy a Vercel
 
-Guia completa para deployar el dashboard a Vercel **sin instalar nada** en tu maquina. Todo corre en un container Docker.
+Guia de deploy del dashboard a Vercel. Hay **dos caminos** para deployar:
+
+1. **Via Git (automatico)** — push a `main` de GitHub dispara deploy en Vercel. Es el flujo recomendado.
+2. **Via Docker + Vercel CLI (manual)** — util para debugging, configuracion y fallback si Git no esta disponible.
 
 ## URLs de produccion actuales
 
-- **https://estaciones-meteorologicas-la-pampa.vercel.app** (alias custom)
-- https://app-eosin-three-45.vercel.app (canonical auto-generada)
+- **https://estaciones-meteorologicas-la-pampa.vercel.app** (dominio custom, auto-actualiza)
+- https://app-eosin-three-45.vercel.app (canonical auto-generada por Vercel)
 
-Proyecto en Vercel: `app` (cuenta `basesmeteorologicaslapampa-8940`).
+## Datos del proyecto
+
+| Item | Valor |
+|---|---|
+| Proyecto Vercel | `app` |
+| Cuenta / Team | `basesmeteorologicaslapampa-8940s-projects` |
+| Team ID | `team_DrKuPaLaEKwhy2X6l6uIK394` |
+| Project ID | `prj_uBw51M4vpwnIm4yotZct0JgfWrlC` |
+| Repo Git | `github.com/basesmeteorologicaslapampa/bases-meteorologicas-la-pampa` |
+| Root Directory | `weather-dashboard/` (monorepo) |
+| Framework | Next.js |
+| Branch produccion | `main` |
 
 ---
 
-## Estructura Docker
+# PARTE 1: Deploy via Git (flujo recomendado)
+
+## Como funciona
 
 ```
-docker/
+Local ─► git push origin main ─► GitHub ─► Vercel detecta push
+                                                │
+                                                ▼
+                                         Build desde weather-dashboard/
+                                                │
+                                                ▼
+                                         Deploy a produccion
+                                                │
+                                                ▼
+                            estaciones-meteorologicas-la-pampa.vercel.app
+```
+
+## Deploy del dia a dia
+
+```bash
+# Desde el root del monorepo
+cd bases-meteorologicas-la-pampa
+
+# Hacer tus cambios en weather-dashboard/, arduino/, supabase/, etc.
+git add .
+git commit -m "feat: descripcion del cambio"
+git push origin main
+```
+
+Listo. En ~1-2 min el cambio esta live en produccion.
+
+## Previews automaticos por Pull Request
+
+Cada PR a `main` genera un **preview deployment** con su propia URL:
+- Formato: `app-git-<branch-name>-basesmeteorologicaslapampa-8940s-projects.vercel.app`
+- Vercel postea un comentario en el PR con la URL
+- Sirve para review del cambio antes de mergear
+
+## Ver el estado de los deploys
+
+- Dashboard de Vercel: [vercel.com/basesmeteorologicaslapampa-8940s-projects/app](https://vercel.com)
+- O via CLI: `./docker/vercel.sh ls` (ver seccion "Parte 2")
+
+---
+
+# PARTE 2: Deploy via Docker + Vercel CLI (manual)
+
+Util para:
+- Configurar env vars y dominios
+- Consultar logs, estado de deploys, rollback
+- Deploy manual cuando Git no esta disponible
+
+Todo corre en un container Docker **sin instalar el CLI en tu maquina**.
+
+## Estructura
+
+```
+weather-dashboard/docker/
 ├── Dockerfile.vercel     # Imagen Alpine + Node 20 + Vercel CLI
 ├── docker-compose.yml    # Monta el proyecto + persiste login
 ├── vercel.sh             # Wrapper: ./docker/vercel.sh <cmd>
 └── .env                  # VERCEL_TOKEN (NO subir a Git)
 ```
 
-El container monta `weather-dashboard/` en `/app`. Los datos de config quedan en volumenes Docker (`docker_vercel-config`, `docker_vercel-cache`). Tu `$HOME` queda intacto.
-
----
-
-## Deploy del dia a dia (proyecto ya linkeado)
-
-Si ya hiciste el setup inicial una vez, hacer un nuevo deploy es:
+## Deploy manual
 
 ```bash
 cd weather-dashboard
-
-# 1. Cargar el token desde docker/.env
 set -a && source docker/.env && set +a
 
-# 2. Deploy a produccion
+# Deploy a produccion (preferir Git)
 ./docker/vercel.sh --prod --yes
-```
 
-Eso es todo. Sale una URL tipo `https://app-eosin-three-45.vercel.app` actualizada.
-
-> Para un **preview** (no produccion), omitir `--prod`:
-> ```bash
-> ./docker/vercel.sh --yes
-> ```
-
----
-
-## Setup inicial (ya hecho, solo referencia)
-
-### 1. Crear token en Vercel
-
-1. Ir a [vercel.com/account/tokens](https://vercel.com/account/tokens)
-2. **Create Token** -> nombre: `weather-dashboard-deploy`, Scope: Full Account
-3. Copiar el valor (solo se muestra una vez)
-4. Pegarlo en `docker/.env`:
-   ```
-   VERCEL_TOKEN=vcp_xxxxxxxxx
-   ```
-
-### 2. Build de la imagen Docker
-
-```bash
-docker compose -f docker/docker-compose.yml build vercel
-```
-
-Tarda ~30s la primera vez. Despues esta cacheado.
-
-### 3. Verificar login
-
-```bash
-set -a && source docker/.env && set +a
-./docker/vercel.sh whoami
-```
-
-Deberia imprimir tu username de Vercel.
-
-### 4. Primer deploy (linkea el proyecto)
-
-```bash
+# Deploy preview (sin tocar produccion)
 ./docker/vercel.sh --yes
 ```
-
-Vercel auto-detecta que es Next.js, crea el proyecto y lo linkea. Despues de esto `.vercel/project.json` queda en tu repo con el ID del proyecto.
-
-### 5. Configurar env vars
-
-Las env vars de `.env.local` NO se usan en produccion. Hay que setearlas en Vercel:
-
-```bash
-# Cargar token
-set -a && source docker/.env && set +a
-
-# URL de Supabase
-printf "https://TU_PROYECTO.supabase.co" | \
-  ./docker/vercel.sh env add NEXT_PUBLIC_SUPABASE_URL production
-
-# Publishable key
-printf "sb_publishable_xxx" | \
-  ./docker/vercel.sh env add NEXT_PUBLIC_SUPABASE_ANON_KEY production
-
-# Secret key (para el API route)
-printf "sb_secret_xxx" | \
-  ./docker/vercel.sh env add SUPABASE_SERVICE_ROLE_KEY production
-```
-
-### 6. Redeploy final a produccion
-
-```bash
-./docker/vercel.sh --prod --force --yes
-```
-
-### 7. Desactivar Vercel Deployment Protection (IMPORTANTE)
-
-Las cuentas nuevas de Vercel vienen con **SSO Protection** activada por default. Esto hace que las URLs de deploy devuelvan 401 a visitantes externos (excepto la canonical auto-generada).
-
-Para un dashboard publico hay que desactivarla via API (no hay comando CLI para esto en Hobby):
-
-```bash
-# Cargar token
-set -a && source docker/.env && set +a
-
-# Leer projectId y orgId desde .vercel/project.json
-PROJECT_ID=$(cat .vercel/project.json | grep -o '"projectId":"[^"]*"' | cut -d'"' -f4)
-TEAM_ID=$(cat .vercel/project.json | grep -o '"orgId":"[^"]*"' | cut -d'"' -f4)
-
-# Desactivar SSO protection
-curl -X PATCH "https://api.vercel.com/v9/projects/${PROJECT_ID}?teamId=${TEAM_ID}" \
-  -H "Authorization: Bearer $VERCEL_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"ssoProtection":null}'
-```
-
-Verificar con:
-```bash
-curl -sI https://TU_URL.vercel.app | head -3
-```
-
-Debe devolver `HTTP/2 200`. Si devuelve `401`, la protection sigue activa.
-
-**Para reactivarla** (solo previews protegidos, produccion publica):
-```bash
-curl -X PATCH "https://api.vercel.com/v9/projects/${PROJECT_ID}?teamId=${TEAM_ID}" \
-  -H "Authorization: Bearer $VERCEL_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"ssoProtection":{"deploymentType":"preview"}}'
-```
-
----
 
 ## Actualizar env vars
 
@@ -161,22 +113,20 @@ set -a && source docker/.env && set +a
 # Eliminar una
 ./docker/vercel.sh env rm NEXT_PUBLIC_SUPABASE_URL production
 
-# Volver a agregar con nuevo valor
+# Agregar con nuevo valor
 printf "nuevo_valor" | ./docker/vercel.sh env add NEXT_PUBLIC_SUPABASE_URL production
 
-# Redeploy para que tome los cambios
-./docker/vercel.sh --prod --force --yes
+# Redeploy (push a main o manual con --force)
+git commit --allow-empty -m "chore: redeploy with new env vars"
+git push origin main
 ```
-
----
 
 ## Comandos utiles
 
 ```bash
-# Siempre cargar el token primero
 set -a && source docker/.env && set +a
 
-# Listar los ultimos deploys
+# Listar deploys recientes
 ./docker/vercel.sh ls
 
 # Ver logs del ultimo deploy
@@ -188,82 +138,74 @@ set -a && source docker/.env && set +a
 # Listar env vars
 ./docker/vercel.sh env ls
 
-# Eliminar un deploy especifico
-./docker/vercel.sh remove <deployment-url> --yes
-
-# Ver dominios asignados
-./docker/vercel.sh domains ls
+# Whoami
+./docker/vercel.sh whoami
 ```
 
----
-
-## Cambiar / agregar el dominio
-
-El dominio `app-eosin-three-45.vercel.app` es auto-generado. Para cambiarlo:
-
-### Opcion A: Otro subdominio `.vercel.app` gratis (via CLI)
+## Rollback a un deploy anterior
 
 ```bash
 set -a && source docker/.env && set +a
 
-# Obtener la URL del deploy de produccion actual
+# Listar deploys
 ./docker/vercel.sh ls
 
-# Asignar el alias (reemplazar la primera URL con la tuya)
-./docker/vercel.sh alias set app-eosin-three-45.vercel.app mi-clima.vercel.app
+# Promover uno anterior a produccion
+./docker/vercel.sh promote <deployment-url>
 ```
 
-> Si el alias devuelve 401: asegurate de haber desactivado SSO protection (ver paso 7 del Setup inicial).
-
-### Opcion B: Via dashboard web
-
-1. Ir a [vercel.com](https://vercel.com) -> tu proyecto `app` -> **Settings** -> **Domains**
-2. Agregar `clima-mi-estacion.vercel.app` (si esta libre)
-3. HTTPS automatico
-
-### Opcion C: Dominio propio
-
-1. Agregar tu dominio en **Settings -> Domains** (ej: `clima.tudominio.com`)
-2. Vercel te dice que records DNS configurar (A / CNAME)
-3. Configurarlos en tu proveedor de DNS
-4. HTTPS automatico con Let's Encrypt (en minutos)
+Vercel guarda todos los deploys historicos. Rollback instantaneo sin rebuild.
 
 ---
 
-## Limites del Free tier
+# PARTE 3: Setup inicial (solo referencia)
 
-- **100 GB bandwidth / mes**
-- **100 GB-horas** de serverless functions
-- **10s timeout** en functions (suficiente para Supabase)
-- **Proyectos ilimitados**
-- **Deploys ilimitados**
+Esta seccion documenta los pasos que se hicieron una sola vez. No hace falta repetirlos salvo en una maquina nueva o al configurar un proyecto desde cero.
 
-Un dashboard de estacion meteorologica usa ~0.1% de esto.
+## 1. Crear token de Vercel
 
----
+1. Ir a [vercel.com/account/tokens](https://vercel.com/account/tokens)
+2. **Create Token** -> nombre: `weather-dashboard-deploy`, Scope: Full Account
+3. Copiar el valor (solo se muestra una vez)
+4. Pegarlo en `weather-dashboard/docker/.env`:
+   ```
+   VERCEL_TOKEN=vcp_xxxxxxxxx
+   ```
 
-## Troubleshooting
+## 2. Build de la imagen Docker
 
-### "Network docker_default ..." cada vez que corro el wrapper
-
-Es normal - compose recrea la red en cada `run --rm`. No afecta nada.
-
-### Warning "Detected .env file"
-
-Vercel detecto `.env.local` durante el build. Esto se soluciona con el archivo `.vercelignore` que ya esta en el repo. Si el warning persiste, verificar que `.vercelignore` tenga:
-```
-.env
-.env.local
-.env*.local
+```bash
+cd weather-dashboard
+docker compose -f docker/docker-compose.yml build vercel
 ```
 
-### "supabaseUrl is required" en produccion
+## 3. Primer deploy (linkea el proyecto)
 
-Las env vars no estan configuradas. Correr `./docker/vercel.sh env ls`. Si faltan, agregarlas (ver seccion "Actualizar env vars") y redeploy con `--force`.
+```bash
+set -a && source docker/.env && set +a
+./docker/vercel.sh --yes
+```
 
-### La URL devuelve 401 "Authentication Required"
+Vercel auto-detecta Next.js, crea el proyecto y guarda `.vercel/project.json` con el ID del proyecto.
 
-Tu proyecto tiene **Vercel Deployment Protection** activada (default en cuentas nuevas). Desactivarla:
+## 4. Configurar env vars
+
+```bash
+set -a && source docker/.env && set +a
+
+printf "https://lkpoevafziyuowzyhsws.supabase.co" | \
+  ./docker/vercel.sh env add NEXT_PUBLIC_SUPABASE_URL production
+
+printf "sb_publishable_xxx" | \
+  ./docker/vercel.sh env add NEXT_PUBLIC_SUPABASE_ANON_KEY production
+
+printf "sb_secret_xxx" | \
+  ./docker/vercel.sh env add SUPABASE_SERVICE_ROLE_KEY production
+```
+
+## 5. Desactivar Vercel Deployment Protection
+
+Cuentas nuevas traen SSO protection activada (devuelve 401). Desactivarla via API:
 
 ```bash
 set -a && source docker/.env && set +a
@@ -275,58 +217,142 @@ curl -X PATCH "https://api.vercel.com/v9/projects/${PROJECT_ID}?teamId=${TEAM_ID
   -d '{"ssoProtection":null}'
 ```
 
+Para reactivarla (solo previews protegidos, produccion publica):
+```bash
+-d '{"ssoProtection":{"deploymentType":"preview"}}'
+```
+
+## 6. Conectar el repo de GitHub a Vercel
+
+Requiere el Vercel GitHub App instalado en tu cuenta de GitHub:
+
+1. En el dashboard de Vercel ir al proyecto -> **Settings -> Git**
+2. Click en **Install** el GitHub App de Vercel
+3. Elegir "Only select repositories" y seleccionar `bases-meteorologicas-la-pampa`
+4. Autorizar
+
+Despues linkear via CLI:
+```bash
+./docker/vercel.sh git connect github.com/basesmeteorologicaslapampa/bases-meteorologicas-la-pampa --yes
+```
+
+## 7. Setear el Root Directory (monorepo)
+
+Como el proyecto es monorepo y Next.js esta en `weather-dashboard/`, hay que decirle a Vercel:
+
+```bash
+curl -X PATCH "https://api.vercel.com/v9/projects/${PROJECT_ID}?teamId=${TEAM_ID}" \
+  -H "Authorization: Bearer $VERCEL_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"rootDirectory":"weather-dashboard"}'
+```
+
+## 8. Agregar dominio custom a nivel proyecto (auto-actualiza en deploys)
+
+**Importante**: `vercel alias set` crea un alias a un **deploy especifico**, que NO se actualiza en los deploys futuros. Para un dominio que apunte siempre a la ultima produccion, agregarlo a nivel proyecto:
+
+```bash
+curl -X POST "https://api.vercel.com/v10/projects/${PROJECT_ID}/domains?teamId=${TEAM_ID}" \
+  -H "Authorization: Bearer $VERCEL_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"estaciones-meteorologicas-la-pampa.vercel.app"}'
+```
+
+Esto registra el dominio como propiedad del proyecto, y cada deploy a produccion lo actualiza automaticamente.
+
+---
+
+# PARTE 4: Limites, seguridad y troubleshooting
+
+## Limites del Free tier (Hobby)
+
+- **100 GB bandwidth / mes**
+- **100 GB-horas** de serverless functions
+- **10s timeout** en functions (suficiente para Supabase)
+- **Proyectos ilimitados**
+- **Deploys ilimitados**
+
+Para este dashboard usamos ~0.1% del cupo.
+
+## Cambiar o agregar dominios
+
+### Opcion A: Otro subdominio `.vercel.app`
+
+Via API (nivel proyecto, auto-actualiza):
+```bash
+curl -X POST "https://api.vercel.com/v10/projects/${PROJECT_ID}/domains?teamId=${TEAM_ID}" \
+  -H "Authorization: Bearer $VERCEL_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"mi-nuevo-dominio.vercel.app"}'
+```
+
+### Opcion B: Dominio propio
+
+1. En Vercel dashboard: Project -> **Settings -> Domains** -> agregar `clima.tudominio.com`
+2. Vercel te muestra que records DNS configurar (A / CNAME)
+3. Configurarlos en tu proveedor de DNS
+4. HTTPS automatico con Let's Encrypt en minutos
+
+## Troubleshooting
+
+### "supabaseUrl is required" en produccion
+
+Las env vars no estan configuradas. Correr `./docker/vercel.sh env ls`. Si faltan, agregarlas (ver Parte 2) y push a main para redeploy.
+
+### La URL devuelve 401 "Authentication Required"
+
+SSO Protection activada. Desactivarla con el comando de la Parte 3, paso 5.
+
 ### El dashboard muestra "Sin datos aun"
 
 La DB de Supabase esta vacia. Correr el simulador:
 ```bash
+cd weather-dashboard
 SUPABASE_URL=https://lkpoevafziyuowzyhsws.supabase.co \
 SUPABASE_SERVICE_KEY=sb_secret_xxx \
 npx tsx scripts/simulate.ts
 ```
 
-O conectar el ESP32 real.
-
 ### Los datos no se actualizan en tiempo real
 
-Supabase Realtime desactivado para la tabla. Correr en el SQL Editor:
+Realtime desactivado para la tabla. En Supabase SQL Editor:
 ```sql
 ALTER PUBLICATION supabase_realtime ADD TABLE weather_readings;
 ```
 
-### Limpiar toda la config de Docker (borra login guardado)
+### El dominio custom no se actualiza despues de un deploy
+
+Si lo creaste con `vercel alias set` apunta a un deploy especifico. Convertirlo a dominio de proyecto (Parte 3, paso 8).
+
+### Warning "Detected .env file" durante el build
+
+`.env.local` esta siendo uploadeado. Verificar que `.vercelignore` contenga:
+```
+.env
+.env.local
+.env*.local
+```
+
+### Limpiar toda la config de Docker
 
 ```bash
 docker compose -f docker/docker-compose.yml down -v
 ```
 
-La proxima vez que corras el wrapper, va a builder de nuevo la imagen y pedir token/login.
+Esto borra los volumenes con el login de Vercel guardado. La proxima vez hay que poner el token de nuevo.
 
-### Cambiar el token
+## Seguridad
 
-Editar `docker/.env`, cambiar el valor de `VERCEL_TOKEN`. Los comandos siguientes van a usar el nuevo automaticamente (no hace falta rebuild).
-
----
-
-## Alternativa: GitHub integration (sin Docker, sin CLI)
-
-Si algun dia no queres usar Docker:
-
-1. `git init` + push a GitHub
-2. Ir a [vercel.com/new](https://vercel.com/new)
-3. Import el repo
-4. Agregar las 3 env vars en el wizard
-5. Deploy
-
-Cada `git push` a `main` redeploya automaticamente.
+- **`docker/.env`** (con `VERCEL_TOKEN`): NUNCA subir a Git. Esta cubierto por `.gitignore` y `.dockerignore`.
+- **`service_role` key de Supabase**: solo para backend/simulador. Nunca en codigo client-side.
+- **`anon` / `publishable` key de Supabase**: OK exponerla (RLS protege la DB).
+- **Tokens rotados**: si un token se filtra, revocarlo en [vercel.com/account/tokens](https://vercel.com/account/tokens).
 
 ---
 
-## Checklist final
-
-Para verificar que todo esta OK despues de un deploy:
+# Checklist despues de cada deploy
 
 - [ ] `./docker/vercel.sh ls` muestra el deploy reciente como "Ready"
-- [ ] `./docker/vercel.sh env ls` muestra las 3 env vars
-- [ ] Abrir la URL publica -> carga el dashboard
-- [ ] Correr el simulador -> ver las lecturas llegar sin refrescar
-- [ ] Verificar en Supabase **Table Editor** que las filas se insertaron
+- [ ] Abrir https://estaciones-meteorologicas-la-pampa.vercel.app -> carga el dashboard
+- [ ] Si agregaste env vars, confirmar con `./docker/vercel.sh env ls`
+- [ ] Si hubo cambios de DB, correr la migracion SQL en Supabase antes del deploy
