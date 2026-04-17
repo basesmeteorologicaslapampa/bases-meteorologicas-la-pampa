@@ -21,47 +21,57 @@ Guia de deploy del dashboard a Vercel. Hay **dos caminos** para deployar:
 | Repo Git | `github.com/basesmeteorologicaslapampa/bases-meteorologicas-la-pampa` |
 | Root Directory | `weather-dashboard/` (monorepo) |
 | Framework | Next.js |
-| Branch produccion | `main` |
+| Branch produccion | `release` (solo se actualiza via GitHub Action al crear un tag) |
+| Branch staging | `main` (genera previews, NO produccion) |
 
 ---
 
-# PARTE 1: Deploy via Git (flujo recomendado)
+# PARTE 1: Deploy via tags SemVer (flujo recomendado)
 
 ## Como funciona
 
 ```
-Local ─► git push origin main ─► GitHub ─► Vercel detecta push
-                                                │
-                                                ▼
-                                         Build desde weather-dashboard/
-                                                │
-                                                ▼
-                                         Deploy a produccion
-                                                │
-                                                ▼
-                            estaciones-meteorologicas-la-pampa.vercel.app
+PR → merge a main → preview/staging (NO produccion)
+                          │
+       Actions → Release → "Run workflow"
+                          │
+              Calcula version, genera CHANGELOG
+              Crea tag vX.Y.Z
+                          │
+       Actions → Deploy (trigger: tag push)
+                          │
+              Push a branch `release`
+              Vercel deploya produccion
+              GitHub Release con changelog
 ```
+
+**Pushes a `main` NO deployean a produccion.** Solo tags SemVer lo hacen.
 
 ## Deploy del dia a dia
 
 ```bash
-# Desde el root del monorepo
-cd bases-meteorologicas-la-pampa
+# 1. Desarrollar en feature branches
+git checkout -b feat/mi-feature
+# hacer cambios...
+git commit -m "feat(dashboard): add weekly chart"
+git push origin feat/mi-feature
+# Crear PR → CI pasa → merge a main
 
-# Hacer tus cambios en weather-dashboard/, arduino/, supabase/, etc.
-git add .
-git commit -m "feat: descripcion del cambio"
-git push origin main
+# 2. main = staging (preview, verificar antes de release)
+# URL preview: app-git-main-basesmeteorologicaslapampa-8940s-projects.vercel.app
+
+# 3. Cuando listo para produccion:
+# GitHub → Actions → Release → "Run workflow" → auto
+# Automaticamente: bumpa version, genera changelog, crea tag, deploya
 ```
 
-Listo. En ~1-2 min el cambio esta live en produccion.
+## Previews automaticos
 
-## Previews automaticos por Pull Request
-
-Cada PR a `main` genera un **preview deployment** con su propia URL:
-- Formato: `app-git-<branch-name>-basesmeteorologicaslapampa-8940s-projects.vercel.app`
-- Vercel postea un comentario en el PR con la URL
-- Sirve para review del cambio antes de mergear
+| Evento | Tipo de deploy | URL |
+|---|---|---|
+| PR a `main` | Preview | `app-git-<branch>-...vercel.app` (unica por PR) |
+| Push a `main` | Preview (staging) | `app-git-main-...vercel.app` |
+| Tag `vX.Y.Z` → push a `release` | **Produccion** | `estaciones-meteorologicas-la-pampa.vercel.app` |
 
 ## Ver el estado de los deploys
 

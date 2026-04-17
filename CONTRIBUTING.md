@@ -81,35 +81,49 @@ Formato: `vMAJOR.MINOR.PATCH` (ej: `v1.2.3`)
 
 ### Como crear una release
 
-```bash
-# 1. Actualizar version en package.json (si aplica)
-# 2. Commit con el bump
-# 3. Crear tag anotado
-git tag -a v0.2.0 -m "feat: add weekly chart and UV sensor support"
-# 4. Push del tag
-git push origin v0.2.0
-```
+La release se hace via GitHub Actions (automatizado):
 
-### Que version es esta?
+1. Ir a **GitHub → Actions → Release → "Run workflow"**
+2. Elegir bump type:
+   - `auto` (default): calcula desde los commits convencionales
+   - `patch` / `minor` / `major`: override manual
+3. El workflow:
+   - Calcula la siguiente version
+   - Bumpa `package.json`
+   - Genera/actualiza `CHANGELOG.md`
+   - Crea commit `chore(release): vX.Y.Z`
+   - Crea tag anotado `vX.Y.Z`
+   - Push a main → trigger deploy a produccion
+
+**No crear tags manualmente** — usar siempre el workflow Release.
+
+### Que version esta en produccion?
 
 ```bash
 git describe --tags --abbrev=0
 ```
 
+O ver https://github.com/basesmeteorologicaslapampa/bases-meteorologicas-la-pampa/releases
+
 ## Flujo completo de un cambio
 
 ```
-1. git checkout -b feat/mi-feature        # Crear branch
-2. (hacer cambios)                         # Editar archivos
-3. git add . && git commit -m "feat: ..."  # Commit con convencion
-4. git push origin feat/mi-feature         # Push
-5. Crear PR en GitHub                      # (web o CLI)
-6. CI pasa (Lint + TS + Build)             # Automatico
-7. Merge PR a main                         # En GitHub
-8. Vercel deploya automaticamente          # Automatico
-9. git checkout main && git pull           # Actualizar local
-10. (opcional) git tag -a vX.Y.Z           # Si es release
+1.  git checkout -b feat/mi-feature        # Crear branch
+2.  (hacer cambios)                         # Editar archivos
+3.  git add . && git commit -m "feat: ..."  # Commit con convencion
+4.  git push origin feat/mi-feature         # Push
+5.  Crear PR en GitHub                      # (web o CLI)
+6.  CI + E2E pasan                          # Automatico
+7.  Vercel genera preview URL               # Automatico (staging)
+8.  Merge PR a main                         # En GitHub
+9.  main = staging (preview, NO produccion) # Verificar antes de release
+10. Actions → Release → "Run workflow"      # Cuando listo para deployar
+11. Tag creado → deploy a produccion        # Automatico via branch release
+12. GitHub Release con changelog             # Automatico
+13. git checkout main && git pull           # Actualizar local
 ```
+
+**Importante**: pushes a `main` NO deployean a produccion. Solo tags lo hacen.
 
 ## Migraciones de DB
 

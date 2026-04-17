@@ -1,0 +1,100 @@
+name: Deploy
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+
+jobs:
+  ci-check:
+    name: Verify CI
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: weather-dashboard
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: weather-dashboard/package-lock.json
+
+      - name: Install and verify
+        run: |
+          npm ci
+          npm run lint
+          npm run type-check
+          npm run build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder-anon-key
+
+  deploy:
+    name: Deploy to Production
+    needs: ci-check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate tag matches package.json
+        working-directory: weather-dashboard
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "ERROR: Tag $GITHUB_REF_NAME does not match package.json version $PKG_VERSION"
+            exit 1
+          fi
+          echo "Version match: $TAG_VERSION"
+
+      - name: Push to release branch
+        run: |
+          git push origin HEAD:refs/heads/release --force
+          echo "Pushed $GITHUB_REF_NAME to release branch"
+          echo "Vercel will auto-deploy from release branch"
+
+      - name: Generate release notes
+        run: |
+          PREVIOUS=$(git tag --sort=-v:refname | sed -n '2p')
+          if [ -z "$PREVIOUS" ]; then
+            echo "Release inicial" > /tmp/notes.md
+          else
+            git log ${PREVIOUS}..${GITHUB_REF_NAME} \
+              --pretty=format:"- %s (%h)" \
+              --no-merges | head -50 > /tmp/notes.md
+          fi
+          cat /tmp/notes.md
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --title "$GITHUB_REF_NAME" \
+            --notes-file /tmp/notes.md \
+            --verify-tag
+
+      - name: Notify on success
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+        run: |
+          echo "### Deployed $GITHUB_REF_NAME to production" >> $GITHUB_STEP_SUMMARY
+          echo "Vercel is building from the \`release\` branch." >> $GITHUB_STEP_SUMMARY
+          echo "[GitHub Release](https://github.com/${{ github.repository }}/releases/tag/$GITHUB_REF_NAME)" >> $GITHUB_STEP_SUMMARY
+
+          if [ -n "$NTFY_TOPIC" ]; then
+            curl -s \
+              -H "Title: Deploy $GITHUB_REF_NAME a produccion" \
+              -H "Priority: default" \
+              -H "Tags: rocket" \
+              -H "Click: https://estaciones-meteorologicas-la-pampa.vercel.app" \
+              -d "Version $GITHUB_REF_NAME deployada exitosamente." \
+              "https://ntfy.sh/$NTFY_TOPIC"
+          fi

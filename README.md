@@ -64,19 +64,31 @@ bases-meteorologicas-la-pampa/
 | [arduino/README.md](arduino/README.md) | Hardware, sensores, calibracion, setup |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Conventional Commits, SemVer, flujo de trabajo |
 | [MONITORING.md](MONITORING.md) | Health check, alertas push, backups |
+| [CHANGELOG.md](CHANGELOG.md) | Historial de releases |
 | [.github/WORKFLOWS.md](.github/WORKFLOWS.md) | CI/CD: todos los GitHub Actions |
 
 ## CI/CD Pipeline
 
-Cada push a `main` o PR ejecuta automaticamente:
+### En cada push/PR a `main`:
 
 | Workflow | Que hace | Duracion |
 |---|---|---|
 | **CI** | Lint + TypeScript + Build | ~40s |
 | **E2E Tests** | Playwright en Chromium | ~2min |
-| **Vercel Deploy** | Build + deploy a produccion | ~1-2min |
 
-Automatizaciones periodicas:
+### Deploy a produccion (por tag SemVer):
+
+```
+Actions → Release → "Run workflow" → auto
+  → calcula version → bumpa package.json → genera CHANGELOG
+  → crea tag vX.Y.Z → push
+  → deploy.yml → push a branch release → Vercel deploya produccion
+  → GitHub Release creado con changelog
+```
+
+Pushes a `main` generan previews (staging), NO produccion. Solo tags deployean a produccion.
+
+### Automatizaciones periodicas:
 
 | Workflow | Frecuencia | Que hace |
 |---|---|---|

@@ -8,6 +8,8 @@ Referencia de todos los workflows automatizados del proyecto.
 |---|---|---|---|
 | **CI** | `ci.yml` | Push/PR a main (cambios en `weather-dashboard/`) | Cada push |
 | **E2E Tests** | `e2e.yml` | Push/PR a main (cambios en `weather-dashboard/`) | Cada push |
+| **Release** | `release.yml` | Manual (workflow_dispatch) | Cuando quieras deployar |
+| **Deploy** | `deploy.yml` | Push de tag `v*.*.*` | Automatico post-release |
 | **Monitoring** | `monitoring.yml` | Cron + manual | Cada 15 min |
 | **Backup** | `backup.yml` | Cron + manual | Diario 04:00 UTC |
 
@@ -23,12 +25,31 @@ Push a feature branch
 PR a main
     │
     ├── CI + E2E deben pasar para mergear
+    ├── Vercel genera preview URL (staging)
     │
     ▼
 Merge a main
     │
     ├── CI + E2E corren de nuevo
-    ├── Vercel auto-deploy (~1-2min)
+    ├── main = STAGING (preview, NO produccion)
+    │
+    ▼
+Cuando listo para deployar:
+    │
+    ├── Actions → Release → "Run workflow"
+    │     ├── Calcula version desde commits
+    │     ├── Bumpa package.json
+    │     ├── Genera CHANGELOG.md
+    │     ├── Crea tag vX.Y.Z
+    │     └── Push commit + tag a main
+    │
+    ▼
+Tag push dispara Deploy workflow:
+    │
+    ├── CI check sobre el commit tagueado
+    ├── Push a branch `release`
+    ├── Vercel detecta push a `release` → build produccion
+    ├── Crea GitHub Release con changelog
     │
     ▼
 Produccion live
@@ -77,6 +98,60 @@ Produccion live
 Si no estan, los tests corren contra placeholders y verifican estructura (no datos).
 
 **On failure**: sube screenshots y trace como artifact (`playwright-report`).
+
+---
+
+## Release (`release.yml`)
+
+**Que hace**: prepara una release — calcula version, bumpa package.json, genera changelog, crea tag.
+
+**Trigger**: `workflow_dispatch` (manual, boton "Run workflow" en Actions).
+
+**Input**:
+
+| Opcion | Que hace |
+|---|---|
+| `auto` (default) | Calcula desde commits: `feat` = minor, `fix` = patch, `!` = major |
+| `patch` | Fuerza bump patch |
+| `minor` | Fuerza bump minor |
+| `major` | Fuerza bump major |
+
+**Pasos**:
+1. Lee commits desde el ultimo tag
+2. Calcula la siguiente version SemVer
+3. Bumpa `weather-dashboard/package.json`
+4. Genera/actualiza `CHANGELOG.md` (agrupado por tipo)
+5. Commit `chore(release): vX.Y.Z`
+6. Crea tag anotado `vX.Y.Z`
+7. Push commit + tag a `main`
+
+**Permisos**: `contents: write` (push + tag).
+
+**Nota**: el commit bypasea branch protection porque usa `GITHUB_TOKEN` con `enforce_admins: false`.
+
+---
+
+## Deploy (`deploy.yml`)
+
+**Que hace**: deploya a produccion cuando se pushea un tag SemVer.
+
+**Trigger**: `push.tags: v[0-9]+.[0-9]+.[0-9]+`
+
+**Jobs**:
+
+1. **ci-check**: corre lint + type-check + build sobre el commit tagueado (gate de seguridad)
+2. **deploy**:
+   - Valida que el tag matchee `package.json` version
+   - `git push origin HEAD:refs/heads/release --force`
+   - Vercel detecta push a `release` → build → deploy produccion
+   - Crea GitHub Release con changelog auto-generado
+   - Notifica via ntfy.sh (si configurado)
+
+**Permisos**: `contents: write` (push a release + crear GitHub Release).
+
+**Secrets opcionales**: `NTFY_TOPIC` (notificacion de deploy exitoso).
+
+**Importante**: NO tocar el branch `release` manualmente. Solo este workflow lo actualiza.
 
 ---
 

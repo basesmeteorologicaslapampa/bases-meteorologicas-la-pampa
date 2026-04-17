@@ -1,0 +1,141 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Version bump (auto = calcula desde commits convencionales)"
+        required: true
+        default: "auto"
+        type: choice
+        options:
+          - auto
+          - patch
+          - minor
+          - major
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Determine version bump
+        id: bump
+        run: |
+          CURRENT=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          echo "current=$CURRENT" >> "$GITHUB_OUTPUT"
+
+          if [ "${{ inputs.bump }}" = "auto" ]; then
+            BREAKING=$(git log ${CURRENT}..HEAD --pretty=format:"%s" | grep -cE "^[a-z]+(\(.+\))?!:" || true)
+            FEAT=$(git log ${CURRENT}..HEAD --pretty=format:"%s" | grep -c "^feat" || true)
+
+            if [ "$BREAKING" -gt 0 ]; then
+              BUMP="major"
+            elif [ "$FEAT" -gt 0 ]; then
+              BUMP="minor"
+            else
+              BUMP="patch"
+            fi
+          else
+            BUMP="${{ inputs.bump }}"
+          fi
+
+          VERSION=${CURRENT#v}
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
+          case $BUMP in
+            major) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
+            minor) MINOR=$((MINOR + 1)); PATCH=0 ;;
+            patch) PATCH=$((PATCH + 1)) ;;
+          esac
+          NEXT="v${MAJOR}.${MINOR}.${PATCH}"
+
+          echo "bump=$BUMP" >> "$GITHUB_OUTPUT"
+          echo "next=$NEXT" >> "$GITHUB_OUTPUT"
+          echo "next_bare=${MAJOR}.${MINOR}.${PATCH}" >> "$GITHUB_OUTPUT"
+          echo "Bump: $BUMP | $CURRENT -> $NEXT"
+
+      - name: Generate changelog entry
+        id: changelog
+        run: |
+          CURRENT="${{ steps.bump.outputs.current }}"
+          NEXT="${{ steps.bump.outputs.next }}"
+          DATE=$(date -u +%Y-%m-%d)
+
+          {
+            echo "## ${NEXT} (${DATE})"
+            echo ""
+
+            for TYPE in feat fix perf refactor style docs ci chore test; do
+              COMMITS=$(git log ${CURRENT}..HEAD --pretty=format:"- %s (%h)" | grep "^- ${TYPE}" || true)
+              if [ -n "$COMMITS" ]; then
+                case $TYPE in
+                  feat) LABEL="Features" ;;
+                  fix) LABEL="Bug Fixes" ;;
+                  perf) LABEL="Performance" ;;
+                  refactor) LABEL="Refactoring" ;;
+                  docs) LABEL="Documentation" ;;
+                  ci) LABEL="CI/CD" ;;
+                  chore) LABEL="Maintenance" ;;
+                  test) LABEL="Tests" ;;
+                  style) LABEL="Styles" ;;
+                  *) LABEL="Other" ;;
+                esac
+                echo "### ${LABEL}"
+                echo ""
+                echo "$COMMITS"
+                echo ""
+              fi
+            done
+          } > /tmp/release_notes.md
+
+          cat /tmp/release_notes.md
+
+      - name: Update package.json version
+        working-directory: weather-dashboard
+        run: npm version "${{ steps.bump.outputs.next_bare }}" --no-git-tag-version
+
+      - name: Update CHANGELOG.md
+        run: |
+          if [ -f CHANGELOG.md ]; then
+            head -2 CHANGELOG.md > /tmp/header.md
+            tail -n +3 CHANGELOG.md > /tmp/existing.md
+            cat /tmp/header.md /tmp/release_notes.md /tmp/existing.md > CHANGELOG.md
+          else
+            echo "# Changelog" > CHANGELOG.md
+            echo "" >> CHANGELOG.md
+            cat /tmp/release_notes.md >> CHANGELOG.md
+          fi
+
+      - name: Commit and tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add weather-dashboard/package.json CHANGELOG.md
+          git commit -m "chore(release): ${{ steps.bump.outputs.next }}"
+          git tag -a "${{ steps.bump.outputs.next }}" \
+            -m "Release ${{ steps.bump.outputs.next }}"
+          git push origin main --follow-tags
+
+      - name: Summary
+        run: |
+          echo "### Release ${{ steps.bump.outputs.next }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Bump**: ${{ steps.bump.outputs.bump }} (${{ steps.bump.outputs.current }} → ${{ steps.bump.outputs.next }})" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          cat /tmp/release_notes.md >> $GITHUB_STEP_SUMMARY
