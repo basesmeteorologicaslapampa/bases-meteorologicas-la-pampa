@@ -126,3 +126,42 @@ source supabase/.env.dev && ./supabase/migrate.sh
 # Despues del merge, aplicar a prod:
 source supabase/.env.prod && ./supabase/migrate.sh
 ```
+
+## Branch protection
+
+La rama `main` esta protegida. Las reglas se configuraron con `.github/branch-protection.sh` (requiere GitHub PAT con scope Administration).
+
+Reglas activas:
+- PR requerido (no push directo — admins pueden bypassear en emergencias)
+- CI debe pasar: Lint, TypeScript, Build
+- Branch debe estar up-to-date antes de merge
+- Force push y deletions bloqueados
+
+## Testing
+
+Antes de crear un PR, verificar que los tests pasen:
+
+```bash
+cd weather-dashboard
+
+# Lint
+npm run lint
+
+# Type check
+npm run type-check
+
+# Build
+npm run build
+
+# E2E (via Docker, sin instalar nada)
+./docker/e2e.sh
+```
+
+Ver [weather-dashboard/E2E_TESTING.md](weather-dashboard/E2E_TESTING.md) para detalles sobre Playwright.
+
+## Documentacion relacionada
+
+- [MONITORING.md](MONITORING.md) — alertas y procedimientos operativos
+- [.github/WORKFLOWS.md](.github/WORKFLOWS.md) — referencia de CI/CD
+- [arduino/README.md](arduino/README.md) — para cambios de hardware/firmware
+- [supabase/README.md](supabase/README.md) — para cambios de base de datos
