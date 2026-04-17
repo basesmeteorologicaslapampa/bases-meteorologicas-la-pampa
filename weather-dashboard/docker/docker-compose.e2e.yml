@@ -1,0 +1,16 @@
+services:
+  e2e:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.e2e
+    environment:
+      - CI=true
+      # Supabase dev para tests (se leen de .env.local montado)
+      - NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL:-https://placeholder.supabase.co}
+      - NEXT_PUBLIC_SUPABASE_ANON_KEY=${NEXT_PUBLIC_SUPABASE_ANON_KEY:-placeholder}
+    volumes:
+      # Montar .env.local para que el dev server tenga credenciales
+      - ../.env.local:/app/.env.local:ro
+      # Output: screenshots y traces de tests fallidos
+      - ../test-results:/app/test-results
+      - ../playwright-report:/app/playwright-report

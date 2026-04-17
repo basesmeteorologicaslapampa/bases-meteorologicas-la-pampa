@@ -63,6 +63,11 @@ arduino/.DS_Store
 *.pem
 coverage/
 
+# --- Playwright E2E tests ---
+**/test-results/
+**/playwright-report/
+**/blob-report/
+
 # --- Docker runtime data (volumes persistidos) ---
 # Los volumenes estan en /var/lib/docker, no en el repo, pero por si acaso:
 docker-data/

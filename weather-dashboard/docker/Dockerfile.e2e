@@ -1,0 +1,28 @@
+# ============================================
+# Playwright E2E tests - imagen con Chromium
+# ============================================
+# Basada en la imagen oficial de Playwright que trae
+# los browsers y dependencias de sistema pre-instaladas.
+
+FROM mcr.microsoft.com/playwright:v1.59.1-noble
+
+WORKDIR /app
+
+# Copiar package files para instalar deps
+COPY package.json package-lock.json ./
+
+# Instalar solo las dependencias del proyecto (no browsers, ya estan)
+RUN npm ci
+
+# Copiar configuracion y tests
+COPY playwright.config.ts ./
+COPY e2e/ ./e2e/
+
+# Copiar el codigo fuente (necesario para levantar el dev server)
+COPY src/ ./src/
+COPY public/ ./public/
+COPY tsconfig.json next.config.ts postcss.config.mjs ./
+
+# El .env.local se monta como volumen en runtime (no se copia en el build)
+
+ENTRYPOINT ["npx", "playwright", "test"]
