@@ -1,0 +1,99 @@
+name: Monitoring
+
+on:
+  schedule:
+    # Cada 15 minutos
+    - cron: "*/15 * * * *"
+  # Permitir ejecucion manual para testing
+  workflow_dispatch:
+
+jobs:
+  health-check:
+    name: Health Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check dashboard health
+        id: health
+        run: |
+          RESPONSE=$(curl -s -w "\n%{http_code}" \
+            "https://estaciones-meteorologicas-la-pampa.vercel.app/api/health" \
+            --max-time 30 || echo -e "\n000")
+
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+          BODY=$(echo "$RESPONSE" | head -n -1)
+
+          echo "http_code=$HTTP_CODE" >> "$GITHUB_OUTPUT"
+          echo "body=$BODY" >> "$GITHUB_OUTPUT"
+
+          STATUS=$(echo "$BODY" | python3 -c "import sys,json; print(json.load(sys.stdin).get('status','unknown'))" 2>/dev/null || echo "unreachable")
+          echo "status=$STATUS" >> "$GITHUB_OUTPUT"
+
+          DB_STATUS=$(echo "$BODY" | python3 -c "import sys,json; print(json.load(sys.stdin)['checks']['database']['status'])" 2>/dev/null || echo "unknown")
+          echo "db_status=$DB_STATUS" >> "$GITHUB_OUTPUT"
+
+          DATA_STATUS=$(echo "$BODY" | python3 -c "import sys,json; print(json.load(sys.stdin)['checks']['data_freshness']['status'])" 2>/dev/null || echo "unknown")
+          echo "data_status=$DATA_STATUS" >> "$GITHUB_OUTPUT"
+
+          MINUTES=$(echo "$BODY" | python3 -c "import sys,json; print(json.load(sys.stdin)['checks']['data_freshness'].get('minutes_ago','?'))" 2>/dev/null || echo "?")
+          echo "minutes_ago=$MINUTES" >> "$GITHUB_OUTPUT"
+
+          echo "=== Health Check Result ==="
+          echo "HTTP: $HTTP_CODE"
+          echo "Status: $STATUS"
+          echo "DB: $DB_STATUS"
+          echo "Data: $DATA_STATUS (${MINUTES} min ago)"
+
+      - name: Alert if unhealthy
+        if: steps.health.outputs.status != 'ok'
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+        run: |
+          STATUS="${{ steps.health.outputs.status }}"
+          DB="${{ steps.health.outputs.db_status }}"
+          DATA="${{ steps.health.outputs.data_status }}"
+          MINUTES="${{ steps.health.outputs.minutes_ago }}"
+          HTTP="${{ steps.health.outputs.http_code }}"
+
+          if [ "$STATUS" = "unreachable" ] || [ "$HTTP" = "000" ]; then
+            TITLE="ALERTA: Dashboard caido"
+            MSG="El dashboard no responde (HTTP $HTTP). Verificar Vercel."
+            PRIORITY="urgent"
+            TAGS="rotating_light"
+          elif [ "$DB" = "error" ]; then
+            TITLE="ALERTA: Base de datos inaccesible"
+            MSG="Supabase no responde. Verificar que el proyecto no este pausado."
+            PRIORITY="high"
+            TAGS="warning"
+          elif [ "$DATA" = "stale" ]; then
+            TITLE="AVISO: Datos desactualizados"
+            MSG="Ultima lectura hace ${MINUTES} min. El ESP32 puede estar desconectado."
+            PRIORITY="default"
+            TAGS="hourglass"
+          elif [ "$DATA" = "no_data" ]; then
+            TITLE="AVISO: Sin datos"
+            MSG="No hay lecturas en la base de datos."
+            PRIORITY="low"
+            TAGS="information_source"
+          else
+            TITLE="ALERTA: Estado desconocido ($STATUS)"
+            MSG="HTTP $HTTP | DB: $DB | Data: $DATA"
+            PRIORITY="high"
+            TAGS="question"
+          fi
+
+          echo "$TITLE: $MSG"
+
+          # Enviar notificacion push via ntfy.sh (solo si el topic esta configurado)
+          if [ -n "$NTFY_TOPIC" ]; then
+            curl -s \
+              -H "Title: $TITLE" \
+              -H "Priority: $PRIORITY" \
+              -H "Tags: $TAGS" \
+              -H "Click: https://estaciones-meteorologicas-la-pampa.vercel.app" \
+              -d "$MSG" \
+              "https://ntfy.sh/$NTFY_TOPIC"
+            echo "Notificacion enviada a ntfy.sh/$NTFY_TOPIC"
+          else
+            echo "NTFY_TOPIC no configurado, no se envio notificacion push"
+          fi
