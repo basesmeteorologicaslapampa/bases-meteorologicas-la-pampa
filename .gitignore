@@ -24,6 +24,9 @@
 supabase/.env.dev
 supabase/.env.prod
 
+# --- Backups (se generan localmente, no subir al repo) ---
+supabase/backups/
+
 # --- Vercel ---
 **/.vercel
 

@@ -1,0 +1,84 @@
+name: Backup
+
+on:
+  schedule:
+    # Todos los dias a las 04:00 UTC (01:00 Argentina)
+    - cron: "0 4 * * *"
+  # Permitir ejecucion manual
+  workflow_dispatch:
+
+jobs:
+  backup:
+    name: Database Backup
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Run pg_dump
+        id: dump
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "ERROR: PROD_DATABASE_URL secret not configured"
+            exit 1
+          fi
+
+          TIMESTAMP=$(date -u +%Y-%m-%d_%H%M%S)
+          FILENAME="backup_${TIMESTAMP}.sql.gz"
+
+          echo "Running pg_dump..."
+          docker run --rm \
+            postgres:17-alpine \
+            pg_dump "$DATABASE_URL" \
+              --no-owner \
+              --no-acl \
+              --clean \
+              --if-exists \
+              --format=plain \
+            | gzip > "$FILENAME"
+
+          SIZE=$(stat -c%s "$FILENAME" 2>/dev/null || stat -f%z "$FILENAME")
+          SIZE_KB=$((SIZE / 1024))
+
+          if [ "$SIZE" -lt 100 ]; then
+            echo "ERROR: Backup vacio ($SIZE bytes)"
+            exit 1
+          fi
+
+          echo "filename=$FILENAME" >> "$GITHUB_OUTPUT"
+          echo "size_kb=$SIZE_KB" >> "$GITHUB_OUTPUT"
+          echo "timestamp=$TIMESTAMP" >> "$GITHUB_OUTPUT"
+          echo "Backup OK: $FILENAME ($SIZE_KB KB)"
+
+      - name: Upload backup artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: db-backup-${{ steps.dump.outputs.timestamp }}
+          path: ${{ steps.dump.outputs.filename }}
+          retention-days: 90
+
+      - name: Notify on failure
+        if: failure()
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+        run: |
+          if [ -n "$NTFY_TOPIC" ]; then
+            curl -s \
+              -H "Title: ALERTA: Backup fallo" \
+              -H "Priority: high" \
+              -H "Tags: warning" \
+              -d "El backup diario de Supabase fallo. Revisar GitHub Actions." \
+              "https://ntfy.sh/$NTFY_TOPIC"
+          fi
+
+      - name: Summary
+        if: success()
+        run: |
+          echo "### Backup completado" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Item | Valor |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
+          echo "| Archivo | \`${{ steps.dump.outputs.filename }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Tamaño | ${{ steps.dump.outputs.size_kb }} KB |" >> $GITHUB_STEP_SUMMARY
+          echo "| Retención | 90 días |" >> $GITHUB_STEP_SUMMARY
+          echo "| Descargar | Artifacts tab de este workflow run |" >> $GITHUB_STEP_SUMMARY

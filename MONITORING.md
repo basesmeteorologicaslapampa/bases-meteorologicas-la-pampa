@@ -203,3 +203,65 @@ Free tier: 50 monitors, 5-min intervals.
 - Verificar WiFi del ESP32 (Serial Monitor)
 - Verificar que las credenciales de Supabase en el ESP32 sean las de PROD (no dev)
 - Verificar que la tabla `weather_readings` no este llena (500MB free tier)
+
+---
+
+## Backups automatizados
+
+### Como funciona
+
+Un GitHub Actions workflow (`.github/workflows/backup.yml`) corre **diariamente a las 04:00 UTC** (01:00 Argentina):
+
+1. Ejecuta `pg_dump` contra la DB de produccion via Docker
+2. Comprime el dump (`backup_YYYY-MM-DD_HHMMSS.sql.gz`)
+3. Lo guarda como **GitHub Artifact** (retencion: 90 dias)
+4. Si falla, envia notificacion push via ntfy.sh
+
+### Requisito: configurar secret
+
+El workflow necesita el `DATABASE_URL` de produccion como secret de GitHub:
+
+1. Ir al repo > **Settings** > **Secrets and variables** > **Actions**
+2. **New repository secret**:
+   - Name: `PROD_DATABASE_URL`
+   - Value: el contenido de `supabase/.env.prod` (sin el `export `, solo el string)
+   - Ejemplo: `postgresql://postgres.xxx:PASSWORD@aws-1-sa-east-1.pooler.supabase.com:6543/postgres`
+3. Add secret
+
+### Descargar un backup
+
+1. GitHub > repo > **Actions** > **Backup** (en el sidebar)
+2. Click en el workflow run deseado
+3. Scroll abajo hasta **Artifacts**
+4. Click en `db-backup-YYYY-MM-DD-HHMMSS` para descargar el `.zip`
+5. Dentro esta el `.sql.gz`
+
+### Restaurar un backup
+
+```bash
+gunzip -c backup_YYYY-MM-DD_HHMMSS.sql.gz | \
+  docker run -i --rm postgres:17-alpine psql "$DATABASE_URL"
+```
+
+### Backup manual (local)
+
+Para un backup inmediato sin esperar al cron:
+
+```bash
+source supabase/.env.prod
+./supabase/backup.sh
+```
+
+El archivo se guarda en `supabase/backups/` (excluido de Git). Retiene los ultimos 30 dias automaticamente.
+
+### Ejecutar el workflow manualmente
+
+GitHub > repo > Actions > Backup > **"Run workflow"** > Run
+
+### Retencion
+
+| Tipo | Retencion |
+|---|---|
+| GitHub Artifacts (automatico) | 90 dias |
+| Local (`supabase/backups/`) | 30 dias (auto-limpieza) |
+| Supabase built-in | 7 dias (free tier) |
