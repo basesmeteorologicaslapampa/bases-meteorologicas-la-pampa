@@ -43,6 +43,13 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: weather-dashboard/package-lock.json
+
       - name: Validate tag matches package.json
         working-directory: weather-dashboard
         run: |
@@ -54,11 +61,33 @@ jobs:
           fi
           echo "Version match: $TAG_VERSION"
 
-      - name: Push to release branch
+      - name: Install Vercel CLI
+        run: npm install -g vercel@latest
+
+      - name: Pull Vercel environment
+        working-directory: weather-dashboard
+        run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+      - name: Build with Vercel
+        working-directory: weather-dashboard
+        run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+      - name: Deploy to Vercel Production
+        id: deploy
+        working-directory: weather-dashboard
         run: |
-          git push origin HEAD:refs/heads/release --force
-          echo "Pushed $GITHUB_REF_NAME to release branch"
-          echo "Vercel will auto-deploy from release branch"
+          URL=$(vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }})
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+          echo "Deployed to: $URL"
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
 
       - name: Generate release notes
         run: |
@@ -81,12 +110,13 @@ jobs:
             --notes-file /tmp/notes.md \
             --verify-tag
 
-      - name: Notify on success
+      - name: Summary and notify
         env:
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
         run: |
           echo "### Deployed $GITHUB_REF_NAME to production" >> $GITHUB_STEP_SUMMARY
-          echo "Vercel is building from the \`release\` branch." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "URL: ${{ steps.deploy.outputs.url }}" >> $GITHUB_STEP_SUMMARY
           echo "[GitHub Release](https://github.com/${{ github.repository }}/releases/tag/$GITHUB_REF_NAME)" >> $GITHUB_STEP_SUMMARY
 
           if [ -n "$NTFY_TOPIC" ]; then
