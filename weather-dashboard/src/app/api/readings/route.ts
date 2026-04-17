@@ -6,8 +6,8 @@ export const dynamic = "force-dynamic";
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) {
-    throw new Error("Faltan variables NEXT_PUBLIC_SUPABASE_URL o SUPABASE_SERVICE_ROLE_KEY");
+  if (!url || !key || url.includes("placeholder")) {
+    return null;
   }
   return createClient(url, key);
 }
@@ -17,6 +17,9 @@ export async function GET(request: Request) {
   const limit = Math.min(Number(searchParams.get("limit")) || 288, 1000);
 
   const supabase = getSupabase();
+  if (!supabase) {
+    return NextResponse.json({ error: "Supabase not configured" }, { status: 503 });
+  }
   const { data, error } = await supabase
     .from("weather_readings")
     .select("*")
@@ -43,6 +46,9 @@ export async function POST(request: Request) {
   }
 
   const supabase = getSupabase();
+  if (!supabase) {
+    return NextResponse.json({ error: "Supabase not configured" }, { status: 503 });
+  }
   const { error } = await supabase.from("weather_readings").insert({
     temperature,
     humidity,

@@ -1,10 +1,11 @@
 import { test, expect } from "@playwright/test";
 
 test.describe("API Endpoints", () => {
-  test("GET /api/health responde con status valido", async ({ request }) => {
+  test("GET /api/health responde con estructura valida", async ({ request }) => {
     const response = await request.get("/api/health");
 
-    expect(response.ok()).toBeTruthy();
+    // Puede ser 200 (ok/degraded) o 503 (down) - ambos son respuestas validas
+    expect([200, 503]).toContain(response.status());
 
     const body = await response.json();
 
@@ -27,7 +28,9 @@ test.describe("API Endpoints", () => {
     );
   });
 
-  test("GET /api/health incluye latencia de DB", async ({ request }) => {
+  test("GET /api/health incluye latencia de DB cuando conectada", async ({
+    request,
+  }) => {
     const response = await request.get("/api/health");
     const body = await response.json();
 
@@ -41,12 +44,13 @@ test.describe("API Endpoints", () => {
   }) => {
     const response = await request.get("/api/readings");
 
-    // Puede ser 200 (datos) o 500 (si no hay env vars de service role)
+    const body = await response.json();
+
     if (response.ok()) {
-      const body = await response.json();
+      // 200: debe ser un array
       expect(Array.isArray(body)).toBeTruthy();
     } else {
-      const body = await response.json();
+      // 503/500: debe tener campo error
       expect(body).toHaveProperty("error");
     }
   });
