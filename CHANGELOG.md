@@ -1,5 +1,32 @@
 # Changelog
 
+## v0.1.1 (2026-04-18)
+
+### Features
+
+- feat(ci): tag-based deploy to production via SemVer (6fa5f41)
+- feat: automated daily backups with pg_dump + GitHub Artifacts (4808424)
+- feat: add monitoring system with health check and push alerts (7ee5104)
+
+### Bug Fixes
+
+- fix(ci): use --cwd flag for Vercel CLI to avoid doubled path (45e17b3)
+- fix(ci): use GH_PAT to bypass branch protection in release workflow (0404f1a)
+- fix(ci): use Vercel CLI for tag-based deploy (Hobby plan compatible) (ead554d)
+- fix: make E2E tests resilient to missing Supabase credentials (297d87b)
+
+### Documentation
+
+- docs: complete project documentation (78% → 100% coverage) (e71e51a)
+
+### Maintenance
+
+- chore(release): v0.2.0 (b9342db)
+
+### Tests
+
+- test: add Playwright E2E tests with Docker + GitHub Actions (f6c2c8d)
+
 ## v0.2.0 (2026-04-18)
 
 ### Features
